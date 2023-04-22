@@ -1,0 +1,102 @@
+---
+title: "Fitting Models"
+format: html
+editor: visual
+---
+
+# Fitting Models
+
+## Load in Data and Dependencies
+
+```{r}
+#| output: false
+require(UsingR)
+require(tgsify)
+require(rms)
+require(dplyr)
+require(olsrr)
+require(validate)
+require(knitr)
+require(kableExtra)
+require(sjPlot)
+require(ggplot2)
+require(table1)
+df<-read.csv('BRFSS_clean.csv')
+drops <- c("SEQNO", "X", "DEAF", "BLIND", "DECIDE", "DIFFWALK", "DIFFDRES", "DIFFALON", "F")
+df<-df[, !(names(df) %in% drops)]
+#Train/Test Split
+#make it reproducible
+set.seed(1)
+
+#use 80% of dataset as training set and 20% as test set
+sample <- sample(c(TRUE, FALSE), nrow(df), replace=TRUE, prob=c(0.8,0.2))
+train  <- df[sample, ]
+test   <- df[!sample, ]
+```
+
+## Build Table 1
+
+```{r}
+head(df)
+```
+
+## Fit Basic Regression Model
+
+```{r}
+f1<- MENTHLTH ~ .
+dd <- datadist(train)
+options(datadist = "dd")
+m1<- ols(f1, data = train, x=TRUE, y=TRUE)
+predictions<- predict(m1, data = test)
+rounded<- round(predictions, digits = 0)
+acc <- rounded == test['MENTHLTH'] 
+mean(acc)
+squared_error<-(predictions - test['MENTHLTH'])^2
+mse<- sum(squared_error)/nrow(test)
+mse
+```
+
+```{r}
+f2 <- MENTHLTH ~ DIAB + HEALTHSCORE + rcs(PHYSHLTH,3) + HIGHBP+ HEARTATTACK + HEARTDISEASE + STROKE + ASTHMA + SKINCANCER + OTHERCANCER + LUNGISSUE + KIDNEYISSUE + ATHRITIS + PARTNERED + COLLEGE + OWNHOME + VET + EMPLOYED + CHILDREN + rcs(INCOMECAT, 3) + rcs(BMI,3) + rcs(AGEG5YR, 3) + SMOKE + ECIG + rcs(DRINKPERW, 3) + rcs(POTADAY, 3) + rcs(FRUIT_J_DAY, 3) + rcs(FRUITDAY, 3) + rcs(GRNVEGDAY,3) + rcs(OTHERVEGDAY, 3) + AFFORDOC + INSURED + EXERCISE + DISCORE + UNEMP + EMPL + RETIR + UNAB_WORK + M + WHITE + BLACK + ASIAN + AM_IND + HISP + ANOTHER_RACE
+dd <- datadist(train)
+options(datadist = "dd")
+m2 <- ols(f2, data = train, x=TRUE, y=TRUE)
+predictions<- predict(m2, data = test)
+rounded<- round(predictions, digits = 0)
+acc <- rounded == test['MENTHLTH'] 
+mean(acc)
+squared_error<-(predictions - test['MENTHLTH'])^2
+mse<- sum(squared_error)/nrow(test)
+mse
+```
+
+## Fit Ordinal Regression Model
+
+```{r}
+f2 <- MENTHLTH ~ DIAB + HEALTHSCORE + rcs(PHYSHLTH,3) + HIGHBP+ HEARTATTACK + HEARTDISEASE + STROKE + ASTHMA + SKINCANCER + OTHERCANCER + LUNGISSUE + KIDNEYISSUE + ATHRITIS + PARTNERED + COLLEGE + OWNHOME + VET + EMPLOYED + CHILDREN + rcs(INCOMECAT, 3) + rcs(BMI,3) + rcs(AGEG5YR, 3) + SMOKE + ECIG + rcs(DRINKPERW, 3) + rcs(POTADAY, 3) + rcs(FRUIT_J_DAY, 3) + rcs(FRUITDAY, 3) + rcs(GRNVEGDAY,3) + rcs(OTHERVEGDAY, 3) + AFFORDOC + INSURED + EXERCISE + DISCORE + UNEMP + EMPL + RETIR + UNAB_WORK + M + WHITE + BLACK + ASIAN + AM_IND + HISP + ANOTHER_RACE
+dd <- datadist(train)
+options(datadist = "dd")
+m2 <- orm(f2, data = train, x=TRUE, y=TRUE)
+predictions<- predict(m2, data = test)
+rounded<- round(predictions, digits = 0)
+acc <- rounded == test['MENTHLTH'] 
+mean(acc)
+squared_error<-(predictions - test['MENTHLTH'])^2
+mse<- sum(squared_error)/nrow(test)
+mse
+```
+
+```{r}
+f2 <- MENTHLTH ~ DIAB + HEALTHSCORE + rcs(PHYSHLTH,3) + HIGHBP+ HEARTATTACK + HEARTDISEASE + STROKE + ASTHMA + SKINCANCER + OTHERCANCER + LUNGISSUE + KIDNEYISSUE + ATHRITIS + PARTNERED + VET + EMPLOYED   + SMOKE + ECIG + rcs(DRINKPERW, 3) + rcs(POTADAY, 3) + rcs(FRUIT_J_DAY, 3) + rcs(FRUITDAY, 3) + rcs(GRNVEGDAY,3) + rcs(OTHERVEGDAY, 3) + AFFORDOC + INSURED + EXERCISE + DISCORE + UNEMP + EMPL + RETIR + UNAB_WORK + WHITE + BLACK + ASIAN + AM_IND + HISP + ANOTHER_RACE + CHILDREN * rcs(INCOMECAT, 3)*OWNHOME + COLLEGE + rcs(BMI,3) *rcs(AGEG5YR, 3)*M + rcs(INCOMECAT, 3)*M 
+
+dd <- datadist(train)
+options(datadist = "dd")
+m2 <- orm(f2, data = train, x=TRUE, y=TRUE)
+predictions<- predict(m2, data = test)
+rounded<- round(predictions, digits = 0)
+acc <- rounded == test['MENTHLTH'] 
+mean(acc)
+squared_error<-(predictions - test['MENTHLTH'])^2
+mse<- sum(squared_error)/nrow(test)
+mse
+```
