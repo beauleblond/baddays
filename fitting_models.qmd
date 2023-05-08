@@ -21,7 +21,7 @@ require(kableExtra)
 require(sjPlot)
 require(ggplot2)
 require(table1)
-df<-read.csv('BRFSS_clean.csv')
+df<-read.csv('data/BRFSS_clean.csv')
 drops <- c("SEQNO", "X", "DEAF", "BLIND", "DECIDE", "DIFFWALK", "DIFFDRES", "DIFFALON", "F")
 df<-df[, !(names(df) %in% drops)]
 #Train/Test Split
@@ -37,7 +37,31 @@ test   <- df[!sample, ]
 ## Build Table 1
 
 ```{r}
-head(df)
+df = df%>% mutate(DISABILITY = case_when(DISCORE>0 ~ 1,
+                              DISCORE==0 ~0))
+label(df$AGE)<-"Categorical Age"
+label(df$M)<-"Male"
+label(df$WHITE)<- "White"
+label(df$BLACK)<- "Black"
+label(df$ASIAN)<- "Asian"
+label(df$AM_IN)<- "American Indian"
+label(df$HISP)<- "Hispanic"
+label(df$ANOTHER_RACE)<- "Another Race"
+label(df$EMPL)<- "Employed"
+label(df$COLLEGE)<- "College Graduate"
+label(df$PARTNERED)<- "Partnered"
+label(df$DISABILITY)<- "Disability Status"
+label(df$MENTHLTH)<- "Number of Bad Mental Health Days in a Month"
+suppressWarnings(table1(~ AGE+M+WHITE+BLACK+ASIAN+AM_IN+HISP+ANOTHER_RACE+EMPL+COLLEGE+PARTNERED+DISABILITY+MENTHLTH, data=df))
+#Average age is around 55 years old 
+drops <- c("DISABILITY")
+df<-df[, !(names(df) %in% drops)]
+```
+
+## Histogram of Outcome
+
+```{r}
+hist(df$MENTHLTH, freq=FALSE, breaks=30, main='Histogram of Number of Bad Mental Health Days', xlab='Number of Bad Mental Health Days')
 ```
 
 ## Fit Basic Regression Model
@@ -46,28 +70,105 @@ head(df)
 f1<- MENTHLTH ~ .
 dd <- datadist(train)
 options(datadist = "dd")
-m1<- ols(f1, data = train, x=TRUE, y=TRUE)
-predictions<- predict(m1, data = test)
+m1<- lm(f1, data = train, x=TRUE, y=TRUE)
+predictions<- predict(m1, test)
+predictions[predictions<0]<-0
+predictions[predictions>30]<-30
 rounded<- round(predictions, digits = 0)
 acc <- rounded == test['MENTHLTH'] 
 mean(acc)
-squared_error<-(predictions - test['MENTHLTH'])^2
-mse<- sum(squared_error)/nrow(test)
-mse
+error<-abs(predictions - test['MENTHLTH'])
+mae<- (sum(error))/nrow(test)
+mae
+acc <- rounded == test['MENTHLTH'] |rounded == test['MENTHLTH']+1|rounded == test['MENTHLTH']-1
+mean(acc)
+```
+
+### Calibration of Basic Regression Model for Test Data
+
+```{r}
+test2 = test%>% mutate(predictions = rounded)
+df2 = test2 %>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(MENTHLTH))
+ggplot(df2, aes(x=predictions, y=score)) + geom_point()+ labs(x='Predicted Bad Mental Health Days', y='Actual Bad Mental Health Days')+geom_abline(intercept=0, slope=1)
+```
+
+```{r}
+test2 = test%>% mutate(predictions = rounded)
+calibration = subset(test2, select= c('predictions', 'MENTHLTH'))
+confusion<- matrix(0, nrow=31, ncol=31)
+calibration$predictions[calibration$predictions<0]<-0
+calibration$predictions[calibration$predictions>30]<-30
+count = 0
+for(row in 1:nrow(calibration)){
+  confusion[calibration[row, 1]+1, calibration[row, 2]+1] = confusion[calibration[row, 1]+1,calibration[row, 2]+1] + 1
+}
+accuracies = diag(confusion)/colSums(confusion)
+barplot(accuracies, xlab = "Number of Bad Mental Health Days", ylab='Accuracy', names.arg = c(0:30), cex.names=.535)
+```
+
+### Calibration of Basic Regression Model for Training Data
+
+```{r}
+predictions<- predict(m1, data=train)
+rounded<- round(predictions, digits = 0)
+train2 = train%>% mutate(predictions = rounded)
+df2 = train2 %>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(MENTHLTH))
+ggplot(df2, aes(x=predictions, y=score)) + geom_point()+ labs(x='Predicted Bad Mental Health Days', y='Actual Bad Mental Health Days')+geom_abline(intercept=0, slope=1)
 ```
 
 ```{r}
 f2 <- MENTHLTH ~ DIAB + HEALTHSCORE + rcs(PHYSHLTH,3) + HIGHBP+ HEARTATTACK + HEARTDISEASE + STROKE + ASTHMA + SKINCANCER + OTHERCANCER + LUNGISSUE + KIDNEYISSUE + ATHRITIS + PARTNERED + COLLEGE + OWNHOME + VET + EMPLOYED + CHILDREN + rcs(INCOMECAT, 3) + rcs(BMI,3) + rcs(AGEG5YR, 3) + SMOKE + ECIG + rcs(DRINKPERW, 3) + rcs(POTADAY, 3) + rcs(FRUIT_J_DAY, 3) + rcs(FRUITDAY, 3) + rcs(GRNVEGDAY,3) + rcs(OTHERVEGDAY, 3) + AFFORDOC + INSURED + EXERCISE + DISCORE + UNEMP + EMPL + RETIR + UNAB_WORK + M + WHITE + BLACK + ASIAN + AM_IND + HISP + ANOTHER_RACE
 dd <- datadist(train)
 options(datadist = "dd")
-m2 <- ols(f2, data = train, x=TRUE, y=TRUE)
-predictions<- predict(m2, data = test)
+m2 <- lm(f2, data = train, x=TRUE, y=TRUE)
+predictions<- predict(m2, test)
+predictions[predictions<0]<-0
+predictions[predictions>30]<-30
 rounded<- round(predictions, digits = 0)
 acc <- rounded == test['MENTHLTH'] 
 mean(acc)
-squared_error<-(predictions - test['MENTHLTH'])^2
-mse<- sum(squared_error)/nrow(test)
-mse
+error<-abs(predictions - test['MENTHLTH'])
+mae<- (sum(error))/nrow(test)
+mae
+
+acc <- rounded == test['MENTHLTH'] |rounded == test['MENTHLTH']+1|rounded == test['MENTHLTH']-1
+mean(acc)
+```
+
+### Calibration of Complex Regression Model
+
+```{r}
+test2 = test%>% mutate(predictions = rounded)
+df2 = test2 %>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(MENTHLTH))
+ggplot(df2, aes(x=predictions, y=score)) + geom_point()+ labs(x='Predicted Bad Mental Health Days', y='Actual Bad Mental Health Days')+geom_abline(intercept=0, slope=1)
+```
+
+```{r}
+test2 = test%>% mutate(predictions = rounded)
+calibration = subset(test2, select= c('predictions', 'MENTHLTH'))
+confusion<- matrix(0, nrow=31, ncol=31)
+calibration$predictions[calibration$predictions<0]<-0
+calibration$predictions[calibration$predictions>30]<-30
+count = 0
+for(row in 1:nrow(calibration)){
+  confusion[calibration[row, 1]+1, calibration[row, 2]+1] = confusion[calibration[row, 1]+1,calibration[row, 2]+1] + 1
+}
+accuracies = diag(confusion)/colSums(confusion)
+barplot(accuracies, xlab = "Number of Bad Mental Health Days", ylab='Accuracy', names.arg = c(0:30), cex.names=.535)
+```
+
+### Calibration of Complex Regression Model on Training Data
+
+```{r}
+predictions<- predict(m2, data=train)
+rounded<- round(predictions, digits = 0)
+train2 = train%>% mutate(predictions = rounded)
+df2 = train2 %>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(MENTHLTH))
+ggplot(df2, aes(x=predictions, y=score)) + geom_point()+ labs(x='Predicted Bad Mental Health Days', y='Actual Bad Mental Health Days')+geom_abline(intercept=0, slope=1)
 ```
 
 ## Fit Ordinal Regression Model
@@ -77,13 +178,52 @@ f2 <- MENTHLTH ~ DIAB + HEALTHSCORE + rcs(PHYSHLTH,3) + HIGHBP+ HEARTATTACK + HE
 dd <- datadist(train)
 options(datadist = "dd")
 m2 <- orm(f2, data = train, x=TRUE, y=TRUE)
-predictions<- predict(m2, data = test)
+predictions<- predict(m2, newdata=test)
+predictions[predictions<0]<-0
+predictions[predictions>30]<-30
 rounded<- round(predictions, digits = 0)
 acc <- rounded == test['MENTHLTH'] 
 mean(acc)
-squared_error<-(predictions - test['MENTHLTH'])^2
-mse<- sum(squared_error)/nrow(test)
-mse
+error<-abs(predictions - test['MENTHLTH'])
+mae<- (sum(error))/nrow(test)
+mae
+
+acc <- rounded == test['MENTHLTH'] |rounded == test['MENTHLTH']+1|rounded == test['MENTHLTH']-1
+mean(acc)
+```
+
+### Calibration of Basic Ordinal Regression Model
+
+```{r}
+test2 = test%>% mutate(predictions = rounded)
+df2 = test2 %>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(MENTHLTH))
+ggplot(df2, aes(x=predictions, y=score)) + geom_point()+ labs(x='Predicted Bad Mental Health Days', y='Actual Bad Mental Health Days')+geom_abline(intercept=0, slope=1)+ xlim(-2,30)
+```
+
+```{r}
+test2 = test%>% mutate(predictions = rounded)
+calibration = subset(test2, select= c('predictions', 'MENTHLTH'))
+confusion<- matrix(0, nrow=31, ncol=31)
+calibration$predictions[calibration$predictions<0]<-0
+calibration$predictions[calibration$predictions>30]<-30
+count = 0
+for(row in 1:nrow(calibration)){
+  confusion[calibration[row, 1]+1, calibration[row, 2]+1] = confusion[calibration[row, 1]+1,calibration[row, 2]+1] + 1
+}
+accuracies = diag(confusion)/colSums(confusion)
+barplot(accuracies, xlab = "Number of Bad Mental Health Days", ylab='Accuracy', names.arg = c(0:30), cex.names=.535)
+```
+
+### Calibration of Basic Ordinal Regression on Training Data
+
+```{r}
+predictions<- predict(m2, data=train)
+rounded<- round(predictions, digits = 0)
+train2 = train%>% mutate(predictions = rounded)
+df2 = train2 %>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(MENTHLTH))
+ggplot(df2, aes(x=predictions, y=score)) + geom_point()+ labs(x='Predicted Bad Mental Health Days', y='Actual Bad Mental Health Days')+geom_abline(intercept=0, slope=1)+ xlim(-2,30)
 ```
 
 ```{r}
@@ -92,11 +232,344 @@ f2 <- MENTHLTH ~ DIAB + HEALTHSCORE + rcs(PHYSHLTH,3) + HIGHBP+ HEARTATTACK + HE
 dd <- datadist(train)
 options(datadist = "dd")
 m2 <- orm(f2, data = train, x=TRUE, y=TRUE)
-predictions<- predict(m2, data = test)
+predictions<- predict(m2, newdata = test)
+predictions[predictions<0]<-0
+predictions[predictions>30]<-30
 rounded<- round(predictions, digits = 0)
 acc <- rounded == test['MENTHLTH'] 
 mean(acc)
-squared_error<-(predictions - test['MENTHLTH'])^2
-mse<- sum(squared_error)/nrow(test)
-mse
+error<-abs(predictions - test['MENTHLTH'])
+mae<- (sum(error))/nrow(test)
+mae
+
+acc <- rounded == test['MENTHLTH'] |rounded == test['MENTHLTH']+1|rounded == test['MENTHLTH']-1
+mean(acc)
 ```
+
+### Calibration of Complex Ordinal Regression Model on Test Data
+
+```{r}
+test2 = test%>% mutate(predictions = rounded)
+df2 = test2 %>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(MENTHLTH))
+ggplot(df2, aes(x=predictions, y=score)) + geom_point()+ labs(x='Predicted Bad Mental Health Days', y='Actual Bad Mental Health Days')+geom_abline(intercept=0, slope=1)+ xlim(-2,30)
+```
+
+```{r}
+test2 = test%>% mutate(predictions = rounded)
+calibration = subset(test2, select= c('predictions', 'MENTHLTH'))
+confusion<- matrix(0, nrow=31, ncol=31)
+calibration$predictions[calibration$predictions<0]<-0
+calibration$predictions[calibration$predictions>30]<-30
+count = 0
+for(row in 1:nrow(calibration)){
+  confusion[calibration[row, 1]+1, calibration[row, 2]+1] = confusion[calibration[row, 1]+1,calibration[row, 2]+1] + 1
+}
+accuracies = diag(confusion)/colSums(confusion)
+barplot(accuracies, xlab = "Number of Bad Mental Health Days", ylab='Accuracy', names.arg = c(0:30), cex.names=.535)
+```
+
+### Calibration of Complex Ordinal Regression on Training Data
+
+```{r}
+predictions<- predict(m2, data=train)
+rounded<- round(predictions, digits = 0)
+train2 = train%>% mutate(predictions = rounded)
+df2 = train2 %>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(MENTHLTH))
+ggplot(df2, aes(x=predictions, y=score)) + geom_point()+ labs(x='Predicted Bad Mental Health Days', y='Actual Bad Mental Health Days')+geom_abline(intercept=0, slope=1)+ xlim(-2,30)
+```
+
+## Fit XGBoost
+
+```{r}
+# Load the required libraries
+library(xgboost)
+library(caret)
+
+# Define the features and target variable
+features <- setdiff(names(train), 'MENTHLTH')
+target <- 'MENTHLTH'
+
+# Define the XGBoost parameters
+parameters <- list(
+  objective = "reg:squarederror", # Use 'reg:squarederror' for a boosted tree
+  eval_metric = "mae",
+  eta = 0.1,
+  max_depth = 5,
+  min_child_weight = 1,
+  subsample = 0.8,
+  colsample_bytree = 0.8
+)
+
+# Train the XGBoost model
+xgb_model <- xgboost(
+  data = as.matrix(train[, features]),
+  label = train[, target],
+  params = parameters,
+ # eval_metric = 'mae',
+  nrounds = 100,
+  early_stopping_rounds = 20
+ #watchlist = list(train = as.matrix(train[, features]), 
+               #   validation = as.matrix(validation_set[, features]))
+)
+
+# Make predictions on the testing dataset
+test_pred <- predict(xgb_model, as.matrix(test[, features]))
+rounded<- round(test_pred, digits = 0)
+acc <- rounded == test['MENTHLTH'] #|rounded == test['MENTHLTH']+1|rounded == test['MENTHLTH']-1
+mean(acc)
+error<-abs(test_pred - test['MENTHLTH'])
+mae<- (sum(error))/nrow(test)
+mae
+
+
+# Define the XGBoost parameters
+parameters <- list(
+  objective = "reg:squarederror", # Use 'reg:squarederror' for a boosted tree
+  eval_metric = 'mae',
+  eta = 0.1,
+  max_depth = 5,
+  min_child_weight = 1,
+  subsample = 0.8,
+  colsample_bytree = 0.8
+)
+
+cv<-xgb.cv(data = as.matrix(train[, features]),
+  label = train[, target],
+  params = parameters,
+ # eval_metric = 'mae',
+  nrounds = 100,
+  early_stopping_rounds = 10,
+ nthread=2, nfold=5)
+```
+
+```{r}
+#Cross validation
+learning_rates <-seq(0.001, .1, by= .005)
+tree_num <- seq(20, 200, by=20)
+cv_mins <- matrix(, nrow=length(learning_rates), ncol= length(tree_num))
+for(i in 1:length(learning_rates)){
+  for(k in 1:length(tree_num)){
+    # Define the XGBoost parameters
+    parameters <- list(
+      objective = "reg:squarederror", # Use 'reg:squarederror' for a boosted tree
+      eval_metric = "mae",
+      eta = learning_rates[i],
+      max_depth = 5,
+      min_child_weight = 1,
+      subsample = 0.8,
+      colsample_bytree = 0.8
+    )
+    
+    # Train the XGBoost model
+    cv <- xgb.cv(
+      data = as.matrix(train[, features]),
+      label = train[, target],
+      params = parameters,
+     # eval_metric = 'mae',
+      nrounds = tree_num[k],
+     nthread=5,
+     nfold = 5,
+      early_stopping_rounds = 10,
+     #watchlist = list(train = as.matrix(train[, features]), 
+                   #   validation = as.matrix(validation_set[, features]))
+    )
+    cv_mins[i,k]<-min(cv$evaluation_log$test_mae_mean)
+  }
+}
+```
+
+## Documenting Min CV Accuracy
+
+```{r}
+#Checking accuracy of cross-validated best metrics for XGBoost
+min(cv_mins)
+which(cv_mins==min(cv_mins))    
+mat_pos <- which(cv_mins == min(cv_mins),        # Set arr.ind = TRUE
+                 arr.ind = TRUE)
+mat_pos   
+#Row 12 (learning rate), column 7 (max_iters)
+learning_rate = .001 + 12*.005
+max_iters = 20 + 20*7
+
+test_pred <- predict(xgb_model, as.matrix(test[, features]))
+rounded<- round(test_pred, digits = 0)
+acc <- rounded == test['MENTHLTH'] #|rounded == test['MENTHLTH']+1|rounded == test['MENTHLTH']-1
+mean(acc)
+error<-abs(test_pred - test['MENTHLTH'])
+mae<- (sum(error))/nrow(test)
+mae
+```
+
+## Narrowing XGBoost Search Space
+
+```{r}
+#Cross validation
+learning_rates_final <-seq(0.05, .07, by= .001)
+tree_num_final <- seq(145, 175, by=1)
+cv_mins_final <- matrix(, nrow=length(learning_rates_final), ncol= length(tree_num_final))
+for(i in 1:length(learning_rates_final)){
+  for(k in 1:length(tree_num_final)){
+    # Define the XGBoost parameters
+    parameters <- list(
+      objective = "reg:squarederror", # Use 'reg:squarederror' for a boosted tree
+      eval_metric = "mae",
+      eta = learning_rates_final[i],
+      max_depth = 5,
+      min_child_weight = 1,
+      subsample = 0.8,
+      colsample_bytree = 0.8
+    )
+    
+    # Train the XGBoost model
+    cv <- xgb.cv(
+      data = as.matrix(train[, features]),
+      label = train[, target],
+      params = parameters,
+     # eval_metric = 'mae',
+      nrounds = tree_num_final[k],
+     nthread=5,
+     nfold = 5,
+      early_stopping_rounds = 10,
+     #watchlist = list(train = as.matrix(train[, features]), 
+                   #   validation = as.matrix(validation_set[, features]))
+    )
+    cv_mins_final[i,k]<-min(cv$evaluation_log$test_mae_mean)
+  }
+}
+```
+
+## Final Fit with Optimal XGBoost Terms
+
+```{r}
+min(cv_mins_final)
+which(cv_mins_final==min(cv_mins_final))    
+mat_pos <- which(cv_mins_final == min(cv_mins_final),        # Set arr.ind = TRUE
+                 arr.ind = TRUE)
+mat_pos   
+#Row 14 (learning rate), column 28 (max_iters)
+learning_rate = .005 + .001*13
+max_iters = 45+27
+```
+
+```{r}
+# Load the required libraries
+library(xgboost)
+library(caret)
+
+# Define the features and target variable
+features <- setdiff(names(train), 'MENTHLTH')
+target <- 'MENTHLTH'
+
+# Define the XGBoost parameters
+parameters <- list(
+  objective = "reg:squarederror", # Use 'reg:squarederror' for a boosted tree
+  eval_metric = "mae",
+  eta = learning_rate,
+  max_depth = 5,
+  min_child_weight = 1,
+  subsample = 0.8,
+  colsample_bytree = 0.8
+)
+
+# Train the XGBoost model
+xgb_model <- xgboost(
+  data = as.matrix(train[, features]),
+  label = train[, target],
+  params = parameters,
+ # eval_metric = 'mae',
+  nrounds = max_iters,
+  early_stopping_rounds = 10
+ #watchlist = list(train = as.matrix(train[, features]), 
+               #   validation = as.matrix(validation_set[, features]))
+)
+
+# Make predictions on the testing dataset
+test_pred <- predict(xgb_model, as.matrix(test[, features]))
+test_pred[test_pred<0]<-0
+test_pred[test_pred>30]<-30
+rounded<- round(test_pred, digits = 0)
+acc <- rounded == test['MENTHLTH'] #|rounded == test['MENTHLTH']+1|rounded == test['MENTHLTH']-1
+mean(acc)
+error<-abs(test_pred - test['MENTHLTH'])
+mae<- (sum(error))/nrow(test)
+mae
+
+acc <- rounded == test['MENTHLTH'] |rounded == test['MENTHLTH']+1|rounded == test['MENTHLTH']-1
+mean(acc)
+```
+
+### Calibration of XGBoost on Testing Data
+
+```{r}
+test2 = test%>% mutate(predictions = rounded)
+df2 = test2 %>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(MENTHLTH))
+ggplot(df2, aes(x=predictions, y=score)) + geom_point()+ labs(x='Predicted Bad Mental Health Days', y='Actual Bad Mental Health Days')+geom_abline(intercept=0, slope=1)+ xlim(0,30)
+```
+
+```{r}
+test2 = test%>% mutate(predictions = rounded)
+calibration = subset(test2, select= c('predictions', 'MENTHLTH'))
+confusion<- matrix(0, nrow=31, ncol=31)
+calibration$predictions[calibration$predictions<0]<-0
+calibration$predictions[calibration$predictions>30]<-30
+count = 0
+for(row in 1:nrow(calibration)){
+  confusion[calibration[row, 1]+1, calibration[row, 2]+1] = confusion[calibration[row, 1]+1,calibration[row, 2]+1] + 1
+}
+accuracies = diag(confusion)/colSums(confusion)
+barplot(accuracies, xlab = "Number of Bad Mental Health Days", ylab='Accuracy', names.arg = c(0:30), cex.names=.535)
+```
+
+### Calibration of XGBoost on Training Data
+
+```{r}
+test_pred <- predict(xgb_model, newdata = as.matrix(train[, features]))
+rounded<- round(test_pred, digits = 0)
+train2 = train%>% mutate(predictions = rounded)
+df2 = train2 %>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(MENTHLTH))
+ggplot(df2, aes(x=predictions, y=score)) + geom_point()+ labs(x='Predicted Bad Mental Health Days', y='Actual Bad Mental Health Days')+geom_abline(intercept=0, slope=1)+ xlim(-2,30)
+```
+
+## Fit SVM
+
+```{r}
+# Load required library
+library(e1071)
+
+svm_subset<-train[1:100000,]
+# Build the SVM model
+svm_model <- svm(MENTHLTH ~ ., data = train, kernel = "poly", degree = 3)
+
+# Make predictions on the testing data
+predictions<- predict(svm_model, newdata = test)
+
+# Calculate the accuracy of the model
+rounded<- round(predictions, digits = 0)
+acc <- rounded == test['MENTHLTH'] 
+mean(acc)
+error<-abs(predictions - test['MENTHLTH'])
+mae<- (sum(error))/nrow(test)
+mae
+
+```
+
+```{r}
+#Tune SVM Model
+#tune model
+tune_out <- 
+    tune.svm(x = train[, features], y = train[, target], 
+             type = "nu-regression", 
+             kernel = "polynomial", degree = 3, cost = 10^(0:3), 
+             gamma = c(.1, 1, 10), coef0 = c(0.1, 1, 10))
+
+#list optimal values
+tune_out$best.parameters$degree
+tune_out$best.parameters$gamma
+tune_out$best.parameters$coef0
+```
+
+Other models if time- decision trees, KNN
