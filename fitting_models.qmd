@@ -21,6 +21,7 @@ require(kableExtra)
 require(sjPlot)
 require(ggplot2)
 require(table1)
+library(ggridges)
 df<-read.csv('data/BRFSS_clean.csv')
 drops <- c("SEQNO", "X", "DEAF", "BLIND", "DECIDE", "DIFFWALK", "DIFFDRES", "DIFFALON", "F")
 df<-df[, !(names(df) %in% drops)]
@@ -82,6 +83,72 @@ mae<- (sum(error))/nrow(test)
 mae
 acc <- rounded == test['MENTHLTH'] |rounded == test['MENTHLTH']+1|rounded == test['MENTHLTH']-1
 mean(acc)
+```
+
+### Cross Validation of Basic Regression
+
+```{r}
+#Randomly shuffle the data
+df<-df[sample(nrow(df)),]
+
+#Create 10 equally size folds
+folds <- cut(seq(1,nrow(df)),breaks=5,labels=FALSE)
+CV_MAE = rep(NA, 5)
+CV_Acc = rep(NA, 5)
+CV_Acc_spread = rep(NA, 5)
+prediction_list <- list(0, 0, 0, 0, 0)
+
+#Perform 10 fold cross validation
+for(i in 1:5){
+    #Segement your data by fold using the which() function 
+    testIndexes <- which(folds==i,arr.ind=TRUE)
+    testData <- df[testIndexes, ]
+    trainData <- df[-testIndexes, ]
+    #Use the test and train data partitions however you desire...
+    m1<- lm(f1, data = train, x=TRUE, y=TRUE)
+    predictions<- predict(m1, testData)
+    predictions[predictions<0]<-0
+    predictions[predictions>30]<-30
+    rounded<- round(predictions, digits = 0)
+    acc <- rounded == testData['MENTHLTH'] 
+    CV_Acc[i] = mean(acc)
+    error<-abs(predictions - test['MENTHLTH'])
+    mae<- (sum(error))/nrow(test)
+    CV_MAE[i] = mae
+    acc <- rounded == testData['MENTHLTH'] |rounded == testData['MENTHLTH']+1|rounded == testData['MENTHLTH']-1
+    CV_Acc_spread[i] = mean(acc)
+    test2 = testData%>% mutate(predictions = rounded)
+    prediction_list[[i]] = test2
+}
+predictions_df = bind_rows(prediction_list)
+```
+
+```{r}
+mean(CV_MAE)
+mean(CV_Acc)
+mean(CV_Acc_spread)
+```
+
+```{r}
+boxplot(
+#predictions~MENTHLTH,
+MENTHLTH~predictions,
+data=predictions_df,
+horizontal = TRUE,
+xlab="Predicted Bad Mental Health Days",
+ylab="Actual Bad Mental Health Days"
+)
+abline(a=0, b=1)
+```
+
+```{r}
+df2 = predictions_df%>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(MENTHLTH))
+ggplot(predictions_df, aes(x = MENTHLTH , y = predictions,fill= predictions, group=predictions)) +
+  geom_density_ridges(bandwidth = .7) +
+  theme_ridges()  +
+  theme(legend.position = "none") + geom_abline(intercept=0, slope=1) + geom_point(aes(score, predictions), data = df2, inherit.aes = FALSE) +
+coord_flip() + scale_y_continuous(name ="Predicted Number of Bad Days") + scale_x_continuous(name ="Actual Number of Bad Days") + ggtitle("Calibration in Linear Regression without Nonlinearity", ) + theme(axis.title.x = element_text(size=10, hjust = 0.5, vjust = 0.5), axis.title.y = element_text(size=10, hjust = 0.5, vjust = 0.5), plot.title = element_text(size=12, hjust = 0.5, vjust = 0.5), axis.text = element_text(size=10)) 
 ```
 
 ### Calibration of Basic Regression Model for Test Data
@@ -171,6 +238,51 @@ df2 = train2 %>%
 ggplot(df2, aes(x=predictions, y=score)) + geom_point()+ labs(x='Predicted Bad Mental Health Days', y='Actual Bad Mental Health Days')+geom_abline(intercept=0, slope=1)
 ```
 
+```{r}
+CV_MAE = rep(NA, 5)
+CV_Acc = rep(NA, 5)
+CV_Acc_spread = rep(NA, 5)
+prediction_list <- list(0, 0, 0, 0, 0)
+
+#Perform 10 fold cross validation
+for(i in 1:5){
+    #Segement your data by fold using the which() function 
+    testIndexes <- which(folds==i,arr.ind=TRUE)
+    testData <- df[testIndexes, ]
+    trainData <- df[-testIndexes, ]
+    #Use the test and train data partitions however you desire...
+    m1<- lm(f2, data = train, x=TRUE, y=TRUE)
+    predictions<- predict(m1, testData)
+    predictions[predictions<0]<-0
+    predictions[predictions>30]<-30
+    rounded<- round(predictions, digits = 0)
+    acc <- rounded == testData['MENTHLTH'] 
+    CV_Acc[i] = mean(acc)
+    error<-abs(predictions - test['MENTHLTH'])
+    mae<- (sum(error))/nrow(test)
+    CV_MAE[i] = mae
+    acc <- rounded == testData['MENTHLTH'] |rounded == testData['MENTHLTH']+1|rounded == testData['MENTHLTH']-1
+    CV_Acc_spread[i] = mean(acc)
+    test2 = testData%>% mutate(predictions = rounded)
+    prediction_list[[i]] = test2
+}
+predictions_df = bind_rows(prediction_list)
+
+df2 = predictions_df%>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(MENTHLTH))
+ggplot(predictions_df, aes(x = MENTHLTH , y = predictions,fill= predictions, group=predictions)) +
+  geom_density_ridges(bandwidth = .7) +
+  theme_ridges()  +
+  theme(legend.position = "none") + geom_abline(intercept=0, slope=1) + geom_point(aes(score, predictions), data = df2, inherit.aes = FALSE) +
+coord_flip() + scale_y_continuous(name ="Predicted Number of Bad Days") + scale_x_continuous(name ="Actual Number of Bad Days") + ggtitle("Calibration in Linear Regression with Nonlinearity", ) + theme(axis.title.x = element_text(size=10, hjust = 0.5, vjust = 0.5), axis.title.y = element_text(size=10, hjust = 0.5, vjust = 0.5), plot.title = element_text(size=12, hjust = 0.5, vjust = 0.5), axis.text = element_text(size=10)) 
+```
+
+```{r}
+mean(CV_MAE)
+mean(CV_Acc)
+mean(CV_Acc_spread)
+```
+
 ## Fit Ordinal Regression Model
 
 ```{r}
@@ -190,6 +302,94 @@ mae
 
 acc <- rounded == test['MENTHLTH'] |rounded == test['MENTHLTH']+1|rounded == test['MENTHLTH']-1
 mean(acc)
+```
+
+```{r}
+CV_MAE = rep(NA, 5)
+CV_Acc = rep(NA, 5)
+CV_Acc_spread = rep(NA, 5)
+prediction_list <- list(0, 0, 0, 0, 0)
+
+#Perform 10 fold cross validation
+for(i in 1:5){
+    #Segement your data by fold using the which() function 
+    testIndexes <- which(folds==i,arr.ind=TRUE)
+    testData <- df[testIndexes, ]
+    trainData <- df[-testIndexes, ]
+    #Use the test and train data partitions however you desire...
+    m1<- orm(f2, data = train, x=TRUE, y=TRUE)
+    predictions<- predict(m1, testData)
+    predictions[predictions<0]<-0
+    predictions[predictions>30]<-30
+    rounded<- round(predictions, digits = 0)
+    acc <- rounded == testData['MENTHLTH'] 
+    CV_Acc[i] = mean(acc)
+    error<-abs(predictions - test['MENTHLTH'])
+    mae<- (sum(error))/nrow(test)
+    CV_MAE[i] = mae
+    acc <- rounded == testData['MENTHLTH'] |rounded == testData['MENTHLTH']+1|rounded == testData['MENTHLTH']-1
+    CV_Acc_spread[i] = mean(acc)
+    test2 = testData%>% mutate(predictions = rounded)
+    prediction_list[[i]] = test2
+}
+predictions_df = bind_rows(prediction_list)
+
+df2 = predictions_df%>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(MENTHLTH))
+ggplot(predictions_df, aes(x = MENTHLTH , y = predictions,fill= predictions, group=predictions)) +
+  geom_density_ridges(bandwidth = .7) +
+  theme_ridges()  +
+  theme(legend.position = "none") + geom_abline(intercept=0, slope=1) + geom_point(aes(score, predictions), data = df2, inherit.aes = FALSE) +
+coord_flip() + scale_y_continuous(name ="Predicted Number of Bad Days") + scale_x_continuous(name ="Actual Number of Bad Days") + ggtitle("Calibration in Ordinal Regression with Nonlinearity", ) + theme(axis.title.x = element_text(size=10, hjust = 0.5, vjust = 0.5), axis.title.y = element_text(size=10, hjust = 0.5, vjust = 0.5), plot.title = element_text(size=12, hjust = 0.5, vjust = 0.5), axis.text = element_text(size=10))
+
+mean(CV_MAE)
+mean(CV_Acc)
+mean(CV_Acc_spread)
+```
+
+```{r}
+f2 <- MENTHLTH ~ DIAB + HEALTHSCORE + PHYSHLTH + HIGHBP+ HEARTATTACK + HEARTDISEASE + STROKE + ASTHMA + SKINCANCER + OTHERCANCER + LUNGISSUE + KIDNEYISSUE + ATHRITIS + PARTNERED + COLLEGE + OWNHOME + VET + EMPLOYED + CHILDREN + INCOMECAT + BMI + AGEG5YR + SMOKE + ECIG + DRINKPERW + POTADAY + FRUIT_J_DAY + FRUITDAY + GRNVEGDAY + OTHERVEGDAY + AFFORDOC + INSURED + EXERCISE + DISCORE + UNEMP + EMPL + RETIR + UNAB_WORK + M + WHITE + BLACK + ASIAN + AM_IND + HISP + ANOTHER_RACE
+
+CV_MAE = rep(NA, 5)
+CV_Acc = rep(NA, 5)
+CV_Acc_spread = rep(NA, 5)
+prediction_list <- list(0, 0, 0, 0, 0)
+
+#Perform 10 fold cross validation
+for(i in 1:5){
+    #Segement your data by fold using the which() function 
+    testIndexes <- which(folds==i,arr.ind=TRUE)
+    testData <- df[testIndexes, ]
+    trainData <- df[-testIndexes, ]
+    #Use the test and train data partitions however you desire...
+    m1<- orm(f2, data = train, x=TRUE, y=TRUE)
+    predictions<- predict(m1, testData)
+    predictions[predictions<0]<-0
+    predictions[predictions>30]<-30
+    rounded<- round(predictions, digits = 0)
+    acc <- rounded == testData['MENTHLTH'] 
+    CV_Acc[i] = mean(acc)
+    error<-abs(predictions - test['MENTHLTH'])
+    mae<- (sum(error))/nrow(test)
+    CV_MAE[i] = mae
+    acc <- rounded == testData['MENTHLTH'] |rounded == testData['MENTHLTH']+1|rounded == testData['MENTHLTH']-1
+    CV_Acc_spread[i] = mean(acc)
+    test2 = testData%>% mutate(predictions = rounded)
+    prediction_list[[i]] = test2
+}
+predictions_df = bind_rows(prediction_list)
+
+df2 = predictions_df%>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(MENTHLTH))
+ggplot(predictions_df, aes(x = MENTHLTH , y = predictions,fill= predictions, group=predictions)) +
+  geom_density_ridges(bandwidth = .7) +
+  theme_ridges()  +
+  theme(legend.position = "none") + geom_abline(intercept=0, slope=1) + geom_point(aes(score, predictions), data = df2, inherit.aes = FALSE) +
+coord_flip() + scale_y_continuous(name ="Predicted Number of Bad Days") + scale_x_continuous(name ="Actual Number of Bad Days") + ggtitle("Calibration in Ordinal Regression without Nonlinearity", ) + theme(axis.title.x = element_text(size=10, hjust = 0.5, vjust = 0.5), axis.title.y = element_text(size=10, hjust = 0.5, vjust = 0.5), plot.title = element_text(size=12, hjust = 0.5, vjust = 0.5), axis.text = element_text(size=10)) 
+
+mean(CV_MAE)
+mean(CV_Acc)
+mean(CV_Acc_spread)
 ```
 
 ### Calibration of Basic Ordinal Regression Model
@@ -454,9 +654,8 @@ max_iters = 45+27
 ```
 
 ```{r}
-# Load the required libraries
-library(xgboost)
-library(caret)
+learning_rate = .005 + .001*13
+max_iters = 45+27
 
 # Define the features and target variable
 features <- setdiff(names(train), 'MENTHLTH')
@@ -498,6 +697,58 @@ mae
 
 acc <- rounded == test['MENTHLTH'] |rounded == test['MENTHLTH']+1|rounded == test['MENTHLTH']-1
 mean(acc)
+```
+
+```{r}
+CV_MAE = rep(NA, 5)
+CV_Acc = rep(NA, 5)
+CV_Acc_spread = rep(NA, 5)
+prediction_list <- list(0, 0, 0, 0, 0)
+
+#Perform 10 fold cross validation
+for(i in 1:5){
+    #Segement your data by fold using the which() function 
+    testIndexes <- which(folds==i,arr.ind=TRUE)
+    testData <- df[testIndexes, ]
+    trainData <- df[-testIndexes, ]
+    #Use the test and train data partitions however you desire...
+    xgb_model <- xgboost(
+    data = as.matrix(trainData[, features]),
+    label = trainData[, target],
+    params = parameters,
+   # eval_metric = 'mae',
+    nrounds = max_iters,
+    early_stopping_rounds = 10
+   #watchlist = list(train = as.matrix(train[, features]), 
+                 #   validation = as.matrix(validation_set[, features]))
+  )
+    predictions<- predict(xgb_model, as.matrix(testData[, features]))
+    predictions[predictions<0]<-0
+    predictions[predictions>30]<-30
+    rounded<- round(predictions, digits = 0)
+    acc <- rounded == testData['MENTHLTH'] 
+    CV_Acc[i] = mean(acc)
+    error<-abs(predictions - test['MENTHLTH'])
+    mae<- (sum(error))/nrow(test)
+    CV_MAE[i] = mae
+    acc <- rounded == testData['MENTHLTH'] |rounded == testData['MENTHLTH']+1|rounded == testData['MENTHLTH']-1
+    CV_Acc_spread[i] = mean(acc)
+    test2 = testData%>% mutate(predictions = rounded)
+    prediction_list[[i]] = test2
+}
+predictions_df = bind_rows(prediction_list)
+
+df2 = predictions_df%>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(MENTHLTH))
+ggplot(predictions_df, aes(x = MENTHLTH , y = predictions,fill= predictions, group=predictions)) +
+  geom_density_ridges(bandwidth = .7) +
+  theme_ridges()  +
+  theme(legend.position = "none") + geom_abline(intercept=0, slope=1) + geom_point(aes(score, predictions), data = df2, inherit.aes = FALSE) +
+coord_flip() + scale_y_continuous(name ="Predicted Number of Bad Days") + scale_x_continuous(name ="Actual Number of Bad Days") + ggtitle("Calibration in XGBoost", ) + theme(axis.title.x = element_text(size=10, hjust = 0.5, vjust = 0.5), axis.title.y = element_text(size=10, hjust = 0.5, vjust = 0.5), plot.title = element_text(size=12, hjust = 0.5, vjust = 0.5), axis.text = element_text(size=10)) 
+
+mean(CV_MAE)
+mean(CV_Acc)
+mean(CV_Acc_spread)
 ```
 
 ### Calibration of XGBoost on Testing Data
@@ -573,3 +824,15 @@ tune_out$best.parameters$coef0
 ```
 
 Other models if time- decision trees, KNN
+
+```{r}
+predictions_df<-read.csv('data/rf_predictions')
+df2 = predictions_df%>%
+  group_by(predictions)%>% summarise(n=n(), score = mean(actual))
+ggplot(predictions_df, aes(x = actual , y = predictions,fill= predictions, group=predictions)) +
+  geom_density_ridges(bandwidth = .7) +
+  theme_ridges()  +
+  theme(legend.position = "none") + geom_abline(intercept=0, slope=1) + geom_point(aes(score, predictions), data = df2, inherit.aes = FALSE) +
+coord_flip() + scale_y_continuous(name ="Predicted Number of Bad Days") + scale_x_continuous(name ="Actual Number of Bad Days") + ggtitle("Calibration in Random Forest", ) + theme(axis.title.x = element_text(size=10, hjust = 0.5, vjust = 0.5), axis.title.y = element_text(size=10, hjust = 0.5, vjust = 0.5), plot.title = element_text(size=12, hjust = 0.5, vjust = 0.5), axis.text = element_text(size=10)) 
+
+```
